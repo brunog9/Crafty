@@ -1113,7 +1113,7 @@ h1,h2,h3{line-height:1.15;}
           <li>Integraciones básicas</li>
         </ul>
         <p class="plan-implementation">Implementación inicial: <strong>USD 500</strong></p>
-        <a href="https://wa.me/5491166405270?text=Hola%2C%20quiero%20conocer%20m%C3%A1s%20sobre%20el%20plan%20Starter%20de%20Crafty." target="_blank" rel="noopener" class="plan-cta" data-track="whatsapp-plan-starter">Empezar con Starter</a>
+        <a href="https://wa.me/5491166405270?text=Hola%20Crafty%2C%20estoy%20interesado%20en%20el%20plan%20Starter.%20Quiero%20saber%20m%C3%A1s%20y%20entender%20c%C3%B3mo%20podr%C3%ADa%20aplicarlo%20a%20mi%20operaci%C3%B3n." target="_blank" rel="noopener" class="plan-cta" data-track="whatsapp-plan-starter" data-plan="starter">Empezar con Starter</a>
       </div>
 
       <div class="plan-card plan-card--featured" data-reveal="up">
@@ -1127,7 +1127,7 @@ h1,h2,h3{line-height:1.15;}
           <li>Integraciones y herramientas personalizadas</li>
         </ul>
         <p class="plan-implementation">Implementación inicial: <strong>USD 1.000</strong></p>
-        <a href="https://wa.me/5491166405270?text=Hola%2C%20quiero%20conocer%20m%C3%A1s%20sobre%20el%20plan%20Professional%20de%20Crafty." target="_blank" rel="noopener" class="plan-cta plan-cta--primary" data-track="whatsapp-plan-professional">Elegir Professional</a>
+        <a href="https://wa.me/5491166405270?text=Hola%20Crafty%2C%20estoy%20interesado%20en%20el%20plan%20Professional.%20Quiero%20saber%20m%C3%A1s%20y%20entender%20c%C3%B3mo%20podr%C3%ADa%20aplicarlo%20a%20mi%20operaci%C3%B3n." target="_blank" rel="noopener" class="plan-cta plan-cta--primary" data-track="whatsapp-plan-professional" data-plan="professional">Elegir Professional</a>
       </div>
 
       <div class="plan-card" data-reveal="up">
@@ -1140,7 +1140,7 @@ h1,h2,h3{line-height:1.15;}
           <li>Integraciones avanzadas</li>
         </ul>
         <p class="plan-implementation">Implementación inicial: <strong>USD 1.500</strong></p>
-        <a href="https://wa.me/5491166405270?text=Hola%2C%20quiero%20conocer%20m%C3%A1s%20sobre%20el%20plan%20Business%20de%20Crafty." target="_blank" rel="noopener" class="plan-cta" data-track="whatsapp-plan-business">Elegir Business</a>
+        <a href="https://wa.me/5491166405270?text=Hola%20Crafty%2C%20estoy%20interesado%20en%20el%20plan%20Business.%20Quiero%20saber%20m%C3%A1s%20y%20entender%20c%C3%B3mo%20podr%C3%ADa%20aplicarlo%20a%20mi%20operaci%C3%B3n." target="_blank" rel="noopener" class="plan-cta" data-track="whatsapp-plan-business" data-plan="business">Elegir Business</a>
       </div>
     </div>
 
@@ -1600,17 +1600,191 @@ function initAnchors(){
   });
 }
 
-/* Attribution capture: store UTM/fbclid params from the URL in sessionStorage
-   so a future Pixel/Analytics integration can read them from there. This does
-   NOT touch any visible link or message — no attribution text is added to
-   the WhatsApp message, and nothing is sent anywhere yet. */
+/* lead_id: one short, human-readable code per browser tab session, e.g.
+   "LP-7K2M9X". Generated once, reused from sessionStorage on every reload
+   within the same session, regenerated only when sessionStorage is empty
+   (a genuinely new session). Alphabet excludes 0/O and 1/I to avoid visual
+   confusion when someone reads the code out of a WhatsApp message. Kept in
+   its own key (not merged into crafty_attribution) since it's an identity,
+   not an acquisition fact. */
+var LEAD_ID_ALPHABET="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+var leadId=null;
+function generateLeadId(){
+  var code="";
+  for(var i=0;i<6;i++){
+    code+=LEAD_ID_ALPHABET.charAt(Math.floor(Math.random()*LEAD_ID_ALPHABET.length));
+  }
+  return "LP-"+code;
+}
+function getOrCreateLeadId(){
+  if(leadId) return leadId;
+  try{
+    var existing=sessionStorage.getItem("crafty_lead_id");
+    if(existing){ leadId=existing; return leadId; }
+  }catch(e){}
+  leadId=generateLeadId();
+  try{ sessionStorage.setItem("crafty_lead_id",leadId); }catch(e){}
+  return leadId;
+}
+function initLeadId(){
+  getOrCreateLeadId();
+}
+
+/* Appends "Código de referencia: <lead_id>" to the visible text of every
+   wa.me link on the page, on top of whatever message is already there.
+   Runs once per page load; guards against double-appending so a re-run
+   (or an already-tagged href) never stacks the line twice. Only touches
+   the text param — link target, tracking, everything else stays as-is. */
+function initLeadIdInLinks(){
+  var id=getOrCreateLeadId();
+  var marker="Código de referencia:";
+  var links=document.querySelectorAll('a[href^="https://wa.me/"]');
+  links.forEach(function(a){
+    try{
+      var href=a.getAttribute("href");
+      var qIndex=href.indexOf("?");
+      var base=qIndex===-1?href:href.slice(0,qIndex);
+      var query=qIndex===-1?"":href.slice(qIndex+1);
+      var text=new URLSearchParams(query).get("text")||"";
+      if(text.indexOf(marker)!==-1) return;
+      var newText=text+"\n"+marker+" "+id;
+      a.setAttribute("href",base+"?text="+encodeURIComponent(newText));
+    }catch(e){}
+  });
+}
+
+/* Attribution capture: store UTM/gclid/fbclid params from the URL in
+   sessionStorage, alongside the landing page path and a capture timestamp,
+   so a future Pixel/Analytics/backend integration can read them from there.
+   This does NOT touch any visible link or message — no attribution text is
+   added to the WhatsApp message, and nothing is sent anywhere yet.
+   Scoped to the current browser tab session on purpose (see report to the
+   user, 2026): this first version measures the ad → landing → WhatsApp
+   path within a single visit, not a multi-day attribution window. Existing
+   behavior preserved: a page load with no tracked params never overwrites
+   an attribution record already captured earlier in the same session. */
 function initAttributionCapture(){
-  var trackedKeys=["utm_source","utm_medium","utm_campaign","utm_content","utm_term","fbclid"];
+  var trackedKeys=["utm_source","utm_medium","utm_campaign","utm_content","utm_term","gclid","fbclid"];
   var params=new URLSearchParams(window.location.search);
   var found={};
   trackedKeys.forEach(function(k){ var v=params.get(k); if(v) found[k]=v; });
-  if(!Object.keys(found).length) return;
+
+  var hasNewParams=Object.keys(found).length>0;
+  var existing=null;
+  try{ existing=sessionStorage.getItem("crafty_attribution"); }catch(e){}
+  if(!hasNewParams && existing) return;
+
+  found.landing_page=window.location.pathname;
+  found.timestamp=new Date().toISOString();
   try{ sessionStorage.setItem("crafty_attribution", JSON.stringify(found)); }catch(e){}
+}
+
+/* Shared readers for the two sessionStorage records, used by both
+   trackEvent (dataLayer) and sendLeadToSheet (Apps Script POST) so the
+   two never drift out of sync with each other. */
+function getStoredAttribution(){
+  var attribution={};
+  try{
+    var raw=sessionStorage.getItem("crafty_attribution");
+    if(raw) attribution=JSON.parse(raw);
+  }catch(e){}
+  return attribution;
+}
+function getStoredPlanInterest(){
+  try{ return sessionStorage.getItem("crafty_plan_interest"); }catch(e){ return null; }
+}
+
+/* Event tracking scaffold: no analytics tool is installed yet (audited —
+   no GA/GTM/Meta Pixel in this file), so this only prepares structured
+   events for whenever one is added. It pushes to window.dataLayer (created
+   here as a plain array if absent — this is NOT a GTM install, just the
+   data structure GTM reads from when it's added later) and mirrors every
+   event to console.debug for QA without any tool installed. */
+function trackEvent(name,extra){
+  var attribution=getStoredAttribution();
+  var planInterest=getStoredPlanInterest();
+  var payload=Object.assign({},attribution,extra||{},{event:name});
+  if(planInterest && !payload.plan_interest) payload.plan_interest=planInterest;
+  payload.lead_id=getOrCreateLeadId();
+  window.dataLayer=window.dataLayer||[];
+  window.dataLayer.push(payload);
+  try{ console.debug("[track]",payload); }catch(e){}
+}
+
+/* Step 2 of the tracking system: POST the lead to the Google Apps Script
+   endpoint backing "Crafty — Leads & Attribution (TEST simple)", upserted
+   by lead_id. Left unconfigured (empty string) until the Web App is
+   deployed and its URL is provided — see docs/apps-script-leads-endpoint.gs
+   and the deployment steps sent alongside it. Until then this is a
+   guaranteed no-op: it returns before touching the network.
+
+   Deliberately NOT awaited by the caller and never calls
+   preventDefault() on the WhatsApp link — the browser opens wa.me in its
+   own new tab (target="_blank") independently of this call, so a slow or
+   failed POST can never delay or block that. Plain (CORS) mode, not
+   no-cors: confirmed by real testing (2026-09-07) that Apps Script Web
+   Apps here send access-control-allow-origin:*, so a normal fetch is
+   readable — useful for future debugging — with no behavior difference
+   for this fire-and-forget call, which still never reads the response.
+   text/plain content-type avoids a CORS preflight OPTIONS request, which
+   Apps Script Web Apps do not handle. */
+var CRAFTY_SHEET_ENDPOINT="https://script.google.com/macros/s/AKfycbzxDUU4WcEhQwXw7IhTEwyt-7Sw4Xa4XtxLvWaMvIULuyuMyy19jz8AMwPwFkxRKp0P/exec";
+function sendLeadToSheet(extra){
+  if(!CRAFTY_SHEET_ENDPOINT || !window.fetch) return;
+  var attribution=getStoredAttribution();
+  var planInterest=getStoredPlanInterest();
+  var payload={
+    lead_id: getOrCreateLeadId(),
+    visit_timestamp: attribution.timestamp||"",
+    source: attribution.utm_source||"",
+    medium: attribution.utm_medium||"",
+    campaign: attribution.utm_campaign||"",
+    content: attribution.utm_content||"",
+    term: attribution.utm_term||"",
+    gclid: attribution.gclid||"",
+    fbclid: attribution.fbclid||"",
+    plan_interest: (extra&&extra.plan_interest)||planInterest||"",
+    cta: (extra&&extra.cta)||"",
+    landing_page: attribution.landing_page||""
+  };
+  try{
+    fetch(CRAFTY_SHEET_ENDPOINT,{
+      method:"POST",
+      headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body: JSON.stringify(payload),
+      keepalive:true
+    }).catch(function(){}); // network/endpoint failure: swallow silently, never surface to the visitor
+  }catch(e){}
+}
+
+/* Wires cta_crafty_click / pricing_plan_click / whatsapp_click to the
+   data-track attributes already present on every CTA. A pricing plan click
+   also persists plan_interest (starter/professional/business) in
+   sessionStorage so it keeps enriching later events in the same visit
+   (e.g. if the visitor later clicks the nav "Hablá con Crafty" button).
+   A Sheet row (create-or-update by lead_id) is registered only on an
+   actual WhatsApp click — never just for visiting the landing. */
+function initEventTracking(){
+  document.addEventListener("click",function(e){
+    var el=e.target.closest("[data-track]");
+    if(!el) return;
+    var key=el.getAttribute("data-track");
+    var href=el.getAttribute("href")||"";
+    var isWhatsapp=/^https:\/\/wa\.me\//.test(href);
+    var plan=el.getAttribute("data-plan");
+
+    if(plan){
+      try{ sessionStorage.setItem("crafty_plan_interest",plan); }catch(err){}
+      trackEvent("pricing_plan_click",{cta:key,plan_interest:plan});
+    }
+    if(isWhatsapp){
+      trackEvent("whatsapp_click",{cta:key});
+      sendLeadToSheet({cta:key, plan_interest:plan||null});
+    }
+    if(key==="whatsapp-nav" || key==="whatsapp-hero" || key==="whatsapp-final"){
+      trackEvent("cta_crafty_click",{cta:key});
+    }
+  });
 }
 
 document.addEventListener("DOMContentLoaded",function(){
@@ -1624,7 +1798,10 @@ document.addEventListener("DOMContentLoaded",function(){
   safe(initReveal,"initReveal");
   safe(initFAQ,"initFAQ");
   safe(initAnchors,"initAnchors");
+  safe(initLeadId,"initLeadId");
+  safe(initLeadIdInLinks,"initLeadIdInLinks");
   safe(initAttributionCapture,"initAttributionCapture");
+  safe(initEventTracking,"initEventTracking");
   safe(initPricingSchema,"initPricingSchema");
 });
 })();
