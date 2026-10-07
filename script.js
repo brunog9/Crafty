@@ -266,21 +266,55 @@ function initActionRotator(){
     },260);
   }
 
+  /* Mobile (≤760px, see styles.css): one system and one action visible at a
+     time, crossfading via .is-active, alternating sides. A hidden action slot
+     advances its pool (via swap) so it shows a new item next time. The
+     desktop per-slot swap is paused meanwhile, so a visible tile never
+     double-fades. */
+  var mobileMQ=window.matchMedia("(max-width:760px)");
+  var actionSide=document.querySelector(".integ-flow-side--actions");
+  var systemSide=document.querySelector(".integ-flow-side:not(.integ-flow-side--actions)");
+  var systemChips=systemSide ? Array.prototype.slice.call(systemSide.querySelectorAll(".integ-chip")) : [];
+  var sysIdx=0, actIdx=0, mobileTurn=0;
+  if(systemChips.length){ systemChips[0].classList.add("is-active"); systemSide.classList.add("is-rotating"); }
+  chips[0].classList.add("is-active");
+  if(actionSide) actionSide.classList.add("is-rotating");
+
+  function mobileTick(){
+    if(mobileTurn%2===0 && systemChips.length>1){
+      var nextSys=(sysIdx+1)%systemChips.length;
+      systemChips[sysIdx].classList.remove("is-active");
+      systemChips[nextSys].classList.add("is-active");
+      sysIdx=nextSys;
+    }else{
+      var prevAct=actIdx;
+      actIdx=(actIdx+1)%chips.length;
+      chips[prevAct].classList.remove("is-active");
+      chips[actIdx].classList.add("is-active");
+      setTimeout(function(){ swap(prevAct); },500);
+    }
+    mobileTurn++;
+  }
+
   var timer=null;
   function start(){
     if(timer) return;
     timer=setInterval(function(){
+      if(mobileMQ.matches) return;
       swap(turn%chips.length);
       turn++;
     },2600);
+    setInterval(function(){
+      if(mobileMQ.matches) mobileTick();
+    },1800);
   }
 
-  var side=document.querySelector(".integ-flow-side--actions");
-  if(!side){ start(); return; }
+  var flow=document.querySelector(".integ-flow")||actionSide;
+  if(!flow){ start(); return; }
   var io=new IntersectionObserver(function(entries){
     entries.forEach(function(e){ if(e.isIntersecting) start(); });
   },{threshold:0.3});
-  io.observe(side);
+  io.observe(flow);
 }
 
 /* Casos reales: a single shared stage, one case visible at a time, with a
@@ -347,9 +381,11 @@ function initAnchors(){
 var LEAD_ID_ALPHABET="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 var leadId=null;
 function generateLeadId(){
-  var code="";
+  var code="", n=LEAD_ID_ALPHABET.length, bytes=null;
+  // crypto RNG when available; 256 % 32 === 0, so the modulo has no bias
+  try{ bytes=window.crypto.getRandomValues(new Uint8Array(6)); }catch(e){}
   for(var i=0;i<6;i++){
-    code+=LEAD_ID_ALPHABET.charAt(Math.floor(Math.random()*LEAD_ID_ALPHABET.length));
+    code+=LEAD_ID_ALPHABET.charAt(bytes ? bytes[i]%n : Math.floor(Math.random()*n));
   }
   return "LP-"+code;
 }
@@ -367,14 +403,14 @@ function initLeadId(){
   getOrCreateLeadId();
 }
 
-/* Appends "Código de referencia: <lead_id>" to the visible text of every
-   wa.me link on the page, on top of whatever message is already there.
-   Runs once per page load; guards against double-appending so a re-run
-   (or an already-tagged href) never stacks the line twice. Only touches
-   the text param — link target, tracking, everything else stays as-is. */
+/* Appends " Ref: <lead_id>" to the prefilled text of every wa.me link, on
+   top of the message already in the HTML (e.g. "Hola, quiero conocer
+   Crafty. Ref: <lead_id>"). Crafty can extract it with
+   /Ref:\s*(LP-[A-HJ-NP-Z2-9]{6})/. Runs once per page load; guards against
+   double-appending. Only touches the text param. */
 function initLeadIdInLinks(){
   var id=getOrCreateLeadId();
-  var marker="Código de referencia:";
+  var marker="Ref: ";
   var links=document.querySelectorAll('a[href^="https://wa.me/"]');
   links.forEach(function(a){
     try{
@@ -383,23 +419,21 @@ function initLeadIdInLinks(){
       var base=qIndex===-1?href:href.slice(0,qIndex);
       var query=qIndex===-1?"":href.slice(qIndex+1);
       var text=new URLSearchParams(query).get("text")||"";
-      if(text.indexOf(marker)!==-1) return;
-      var newText=text+"\n"+marker+" "+id;
+      if(text.indexOf(marker+"LP-")!==-1) return;
+      var newText=(text?text+" ":"")+marker+id;
       a.setAttribute("href",base+"?text="+encodeURIComponent(newText));
     }catch(e){}
   });
 }
 
 /* Attribution capture: store UTM/gclid/fbclid params from the URL in
-   sessionStorage, alongside the landing page path and a capture timestamp,
-   so a future Pixel/Analytics/backend integration can read them from there.
-   This does NOT touch any visible link or message — no attribution text is
-   added to the WhatsApp message, and nothing is sent anywhere yet.
-   Scoped to the current browser tab session on purpose (see report to the
-   user, 2026): this first version measures the ad → landing → WhatsApp
-   path within a single visit, not a multi-day attribution window. Existing
-   behavior preserved: a page load with no tracked params never overwrites
-   an attribution record already captured earlier in the same session. */
+   sessionStorage, alongside the landing page path and the initial capture
+   timestamp. Read by trackEvent (dataLayer) and sendLeadToSheet; never
+   added to the WhatsApp message. Scoped to the current tab session.
+   The stored record is kept as-is when a load has no tracked params (empty
+   values are ignored) or the same params as before (e.g. a reload), so the
+   initial timestamp survives. Only a load with a different set of params —
+   a new ad click — replaces it, as a whole, to avoid mixing two touches. */
 function initAttributionCapture(){
   var trackedKeys=["utm_source","utm_medium","utm_campaign","utm_content","utm_term","gclid","fbclid"];
   var params=new URLSearchParams(window.location.search);
@@ -409,7 +443,14 @@ function initAttributionCapture(){
   var hasNewParams=Object.keys(found).length>0;
   var existing=null;
   try{ existing=sessionStorage.getItem("crafty_attribution"); }catch(e){}
-  if(!hasNewParams && existing) return;
+  if(existing){
+    if(!hasNewParams) return;
+    try{
+      var prev=JSON.parse(existing);
+      var same=trackedKeys.every(function(k){ return (prev[k]||"")===(found[k]||""); });
+      if(same) return;
+    }catch(e){}
+  }
 
   found.landing_page=window.location.pathname;
   found.timestamp=new Date().toISOString();
@@ -431,12 +472,9 @@ function getStoredPlanInterest(){
   try{ return sessionStorage.getItem("crafty_plan_interest"); }catch(e){ return null; }
 }
 
-/* Event tracking scaffold: no analytics tool is installed yet (audited —
-   no GA/GTM/Meta Pixel in this file), so this only prepares structured
-   events for whenever one is added. It pushes to window.dataLayer (created
-   here as a plain array if absent — this is NOT a GTM install, just the
-   data structure GTM reads from when it's added later) and mirrors every
-   event to console.debug for QA without any tool installed. */
+/* Pushes structured events to window.dataLayer, read by the GTM container
+   in index.html (GTM-W99SGF), and mirrors them to console.debug for QA.
+   Every event carries lead_id + the stored attribution. */
 function trackEvent(name,extra){
   var attribution=getStoredAttribution();
   var planInterest=getStoredPlanInterest();
@@ -495,12 +533,11 @@ function sendLeadToSheet(extra){
 }
 
 /* Wires cta_crafty_click / pricing_plan_click / whatsapp_click to the
-   data-track attributes already present on every CTA. A pricing plan click
-   also persists plan_interest (starter/professional/business) in
-   sessionStorage so it keeps enriching later events in the same visit
-   (e.g. if the visitor later clicks the nav "Hablá con Crafty" button).
-   A Sheet row (create-or-update by lead_id) is registered only on an
-   actual WhatsApp click — never just for visiting the landing. */
+   data-track attributes already present on every CTA. The plan travels as
+   plan_interest only (GTM maps it to GA4's selected_plan); it's persisted in
+   sessionStorage and keeps enriching later events in the same visit (e.g. a
+   later nav "Hablá con Crafty" click). A Sheet row (create-or-update by
+   lead_id) is registered only on an actual WhatsApp click. */
 function initEventTracking(){
   document.addEventListener("click",function(e){
     var el=e.target.closest("[data-track]");
@@ -509,19 +546,45 @@ function initEventTracking(){
     var href=el.getAttribute("href")||"";
     var isWhatsapp=/^https:\/\/wa\.me\//.test(href);
     var plan=el.getAttribute("data-plan");
+    var channel=isWhatsapp?"whatsapp":undefined;
 
     if(plan){
       try{ sessionStorage.setItem("crafty_plan_interest",plan); }catch(err){}
-      trackEvent("pricing_plan_click",{cta:key,plan_interest:plan});
+      trackEvent("pricing_plan_click",{cta:key,plan_interest:plan,channel:channel});
     }
     if(isWhatsapp){
-      trackEvent("whatsapp_click",{cta:key});
+      trackEvent("whatsapp_click",{cta:key,channel:channel});
       sendLeadToSheet({cta:key, plan_interest:plan||null});
     }
     if(key==="whatsapp-nav" || key==="whatsapp-hero" || key==="whatsapp-final"){
-      trackEvent("cta_crafty_click",{cta:key});
+      trackEvent("cta_crafty_click",{cta:key,channel:channel});
     }
   });
+}
+
+/* webchat_open: the Crafty widget (separate script, untouched) exposes no
+   open event, but toggles data-state="open" on its own container, which it
+   only creates once its origin is allowed. Observed passively. */
+function initWebchatTracking(){
+  if(!window.MutationObserver) return;
+  var CONTAINER_ID="__crafty-widget-container__";
+  var watched=null;
+  function watch(container){
+    if(container===watched) return;
+    watched=container;
+    var wasOpen=container.getAttribute("data-state")==="open";
+    new MutationObserver(function(){
+      var isOpen=container.getAttribute("data-state")==="open";
+      if(isOpen && !wasOpen) trackEvent("webchat_open",{cta:"webchat-widget",channel:"webchat"});
+      wasOpen=isOpen;
+    }).observe(container,{attributes:true,attributeFilter:["data-state"]});
+  }
+  var current=document.getElementById(CONTAINER_ID);
+  if(current) watch(current);
+  new MutationObserver(function(){
+    var c=document.getElementById(CONTAINER_ID);
+    if(c) watch(c);
+  }).observe(document.body,{childList:true});
 }
 
 document.addEventListener("DOMContentLoaded",function(){
@@ -539,6 +602,7 @@ document.addEventListener("DOMContentLoaded",function(){
   safe(initLeadIdInLinks,"initLeadIdInLinks");
   safe(initAttributionCapture,"initAttributionCapture");
   safe(initEventTracking,"initEventTracking");
+  safe(initWebchatTracking,"initWebchatTracking");
   safe(initPricingSchema,"initPricingSchema");
 });
 })();

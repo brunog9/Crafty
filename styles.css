@@ -89,7 +89,7 @@ h1,h2,h3{line-height:1.15;}
 .hero-bg{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden;}
 .hero-glow{position:absolute;inset:-25%;background:radial-gradient(640px circle at var(--mx,50%) var(--my,32%),rgba(230,51,41,0.16),transparent 62%);}
 .hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(247,243,236,0.035) 1px,transparent 1px),linear-gradient(90deg,rgba(247,243,236,0.035) 1px,transparent 1px);background-size:56px 56px;-webkit-mask-image:radial-gradient(ellipse 75% 65% at 50% 38%,black 35%,transparent 88%);mask-image:radial-gradient(ellipse 75% 65% at 50% 38%,black 35%,transparent 88%);}
-.hero-noise{position:absolute;inset:0;opacity:.035;mix-blend-mode:overlay;background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%25" height="100%25" filter="url(%23n)"/></svg>');}
+.hero-noise{position:absolute;inset:0;opacity:.035;mix-blend-mode:overlay;background-image:url("assets/noise.svg");}
 .hero .container{position:relative;z-index:2;max-width:1480px;padding-inline:clamp(24px,4vw,100px);display:grid;grid-template-columns:1.15fr 0.9fr;gap:clamp(32px,5vw,72px);align-items:start;}
 .hero-kicker{color:rgba(247,243,236,0.55);text-transform:uppercase;font-size:13px;letter-spacing:0.14em;font-weight:700;margin-bottom:24px;}
 .solves .hero-kicker,.faq .hero-kicker,.usecases .hero-kicker,.trust .hero-kicker,.pricing .hero-kicker,.info .hero-kicker,.cases .hero-kicker{color:var(--text-secondary-dark);}
@@ -115,6 +115,10 @@ h1,h2,h3{line-height:1.15;}
 
 /* Hero device — isolated, frontal, real smartphone proportions. */
 .hero-device{position:relative;width:min(350px,100%);aspect-ratio:390/844;margin-inline:auto;}
+/* Desktop: whole phone at 80% as one unit. `scale` (not `transform`) so it composes with the data-reveal translateX.
+   `scale` keeps the original layout box, so the negative margin gives back the 20% of height it no longer uses
+   (height = width × 844/390; % margins resolve against the same grid-area width as `width`). */
+@media (min-width:961px){.hero-device{scale:.8;transform-origin:top center;margin-bottom:calc(min(350px,100%) * -0.2 * 844 / 390);}}
 .hero-device-ambient{position:absolute;inset:-14% -10%;background:radial-gradient(circle at 50% 40%,rgba(230,51,41,.28),transparent 68%);filter:blur(32px);z-index:0;pointer-events:none;}
 .hero-device-frame{position:relative;z-index:1;width:100%;height:100%;padding:4px;border:2px solid #111214;border-radius:48px;background:#202124;box-shadow:0 35px 70px rgba(0,0,0,.38),0 12px 28px rgba(0,0,0,.28);}
 .hero-device-screen{position:relative;width:100%;height:100%;overflow:hidden;border-radius:42px;background:#efeae2;}
@@ -335,16 +339,42 @@ h1,h2,h3{line-height:1.15;}
 }
 @media (max-width:640px){
   .teams{padding:64px 0;}
-  .teams-diagram{flex-direction:column;align-items:flex-start;gap:18px;}
-  .teams-diagram-arrow{margin:0;transform:rotate(90deg);}
-  .teams-outcomes{width:100%;padding-left:0;gap:18px;}
-  .teams-outcome{padding-left:0;}
-  .teams-outcome::before{display:none;}
-  .teams-outcomes::before{content:"↓";display:block;color:rgba(247,243,236,.3);font-size:15px;}
+  /* Same horizontal diagram as desktop, scaled down; bracket offsets follow the 32px outcome gap (±16px).
+     Fixed widths (vars) let the teams line span the whole diagram: its left edge = -(everything left of the outcomes). */
+  .teams-diagram{--client-w:84px;--arrow-m:8px;--crafty-w:88px;--outcomes-pl:6px;width:fit-content;max-width:100%;margin-bottom:26px;}
+  .teams-node-client{width:var(--client-w);justify-content:center;gap:6px;padding:8px 11px;}
+  .teams-node-client-icon{width:13px;height:13px;}
+  .teams-node-client-label{font-size:12px;}
+  .teams-diagram-arrow{width:13px;text-align:center;margin:0 var(--arrow-m);font-size:13px;}
+  .teams-node-crafty{width:var(--crafty-w);height:var(--crafty-w);gap:6px;border-radius:20px;box-shadow:0 14px 32px -10px var(--red-glow);}
+  .teams-node-crafty-icon{width:22px;height:22px;}
+  .teams-node-crafty-label{font-size:14px;}
+  .teams-outcomes{gap:32px;padding-left:var(--outcomes-pl);}
+  .teams-outcome{padding-left:20px;}
+  .teams-outcome::before{width:20px;}
+  .teams-outcome--auto::before{top:9px;bottom:-16px;border-top-left-radius:12px;}
+  .teams-outcome--derive::before{top:-16px;height:25px;border-bottom-left-radius:12px;}
+  .teams-outcome-main{font-size:15px;}
+  .teams-outcome-sub{font-size:11px;}
+  .teams-outcome-teams{left:calc(-1 * (var(--client-w) + 2 * var(--arrow-m) + 13px + var(--crafty-w) + var(--outcomes-pl)));right:0;text-align:center;margin-top:10px;font-size:11px;white-space:nowrap;}
   .teams-benefits{grid-template-columns:1fr;gap:24px;margin-top:28px;}
   .teams-benefits-sep{margin-top:44px;}
   .teams-inbox-row{flex-wrap:wrap;}
   .teams-inbox-status-wrap{flex-basis:100%;width:100%;margin-left:52px;margin-top:8px;flex-direction:row;align-items:center;justify-content:flex-start;gap:8px;}
+}
+/* Narrow phones: keep the diagram's min-content within the column (312px at 360w, 272px at 320w). */
+@media (max-width:400px){
+  .teams-diagram{--arrow-m:6px;--crafty-w:80px;--outcomes-pl:4px;}
+  .teams-node-crafty{border-radius:18px;}
+  .teams-node-crafty-icon{width:20px;height:20px;}
+  .teams-node-crafty-label{font-size:13.5px;}
+  .teams-outcome{padding-left:16px;}
+  .teams-outcome::before{width:16px;}
+  .teams-outcome-sub{font-size:10.5px;}
+}
+@media (max-width:350px){
+  .teams-diagram{--client-w:68px;--crafty-w:72px;}
+  .teams-node-client-icon{display:none;}
 }
 
 /* Shared flow-diagram (used in IA + Equipos and Casos reales) */
@@ -406,10 +436,43 @@ h1,h2,h3{line-height:1.15;}
 .integ-flow-crafty-icon{width:24px;height:24px;color:#fff;}
 .integ-flow-crafty-icon svg{width:100%;height:100%;}
 .integ-flow-crafty-label{font-size:15px;font-weight:800;color:#fff;}
+/* Desktop: diagram ~15% wider (columns, gaps, Crafty box); type and chip heights unchanged. */
+@media (min-width:961px){
+  .integ-flow{gap:28px;}
+  .integ-flow-side{min-width:220px;}
+  .integ-flow-side--actions{width:242px;}
+  .integ-flow-crafty{width:129px;height:129px;}
+}
+/* Mobile: [1 system] → Crafty → [1 action]. The sides become display:contents so labels and chips sit on one
+   5-column grid; every chip of a side is stacked in the same cell and script.js crossfades .is-active.
+   Without JS (no .is-rotating) the first chip of each side is shown. */
 @media (max-width:760px){
-  .integ-flow{flex-direction:column;gap:18px;}
-  .integ-flow-arrow{transform:rotate(90deg);}
-  .integ-flow-side,.integ-flow-side--actions{align-items:center;text-align:center;}
+  .integ-flow{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto minmax(0,1fr);column-gap:6px;row-gap:10px;align-items:stretch;max-width:440px;}
+  .integ-flow-side,.integ-flow-side--actions{display:contents;}
+  .integ-flow-label{grid-row:1;grid-column:1;justify-self:center;align-self:end;font-size:10px;white-space:nowrap;margin:0;}
+  .integ-flow-side--actions .integ-flow-label{grid-column:5;}
+  .integ-flow-arrow{grid-row:2;grid-column:2;align-self:center;font-size:13px;}
+  .integ-flow-crafty{grid-row:2;grid-column:3;align-self:center;width:72px;height:72px;gap:6px;border-radius:18px;box-shadow:0 14px 30px -10px var(--red-glow);}
+  .integ-flow-crafty-icon{width:20px;height:20px;}
+  .integ-flow-crafty-label{font-size:13.5px;}
+  .integ-flow-crafty + .integ-flow-arrow{grid-column:4;}
+  .integ-flow .integ-chip{grid-row:2;grid-column:1;flex-direction:column;justify-content:center;gap:6px;padding:10px 6px;font-size:12px;line-height:1.25;text-align:center;white-space:normal;overflow-wrap:break-word;min-width:0;opacity:0;visibility:hidden;transition:opacity .45s ease,visibility 0s linear .45s;}
+  .integ-flow-side--actions .integ-chip{grid-column:5;width:auto;}
+  .integ-flow .integ-chip svg{width:16px;height:16px;}
+  .integ-flow .integ-chip-content{flex-direction:column;gap:6px;max-width:100%;}
+  .integ-flow .integ-chip-content .integ-chip-text{white-space:normal;overflow:visible;}
+  .integ-flow .integ-chip.is-active,
+  .integ-flow-side:not(.is-rotating) .integ-flow-label + .integ-chip{opacity:1;visibility:visible;transition:opacity .45s ease;}
+}
+@media (max-width:370px){
+  .integ-flow .integ-chip{font-size:11px;}
+}
+@media (max-width:340px){
+  .integ-flow{column-gap:4px;}
+  .integ-flow-crafty{width:60px;height:60px;border-radius:16px;}
+  .integ-flow-crafty-icon{width:18px;height:18px;}
+  .integ-flow-crafty-label{font-size:12.5px;}
+  .integ-flow .integ-chip{font-size:10.5px;padding:10px 4px;}
 }
 
 /* Integraciones directas / a medida */
@@ -462,15 +525,44 @@ h1,h2,h3{line-height:1.15;}
 .case-result-status--team{color:var(--red);font-size:14px;font-weight:700;}
 .case-result-note{font-size:12px;color:var(--text-secondary-dark);line-height:1.4;}
 .case-caption{margin-top:24px;font-size:13px;color:var(--text-secondary-light);max-width:520px;}
+/* Desktop: ~15% lighter case block — tighter padding/spacing only, type sizes unchanged. */
+@media (min-width:761px){
+  .cases{padding:96px 0;}
+  .stat-band{margin-bottom:44px;}
+  .case-tabs{margin-bottom:22px;}
+  .case-stage{padding:30px 32px;}
+  .case-panel-title{margin-bottom:18px;}
+  .case-demo{gap:22px;}
+  .case-chat{padding:16px 18px;gap:6px;}
+  .case-bubble{padding:8px 12px;line-height:1.38;}
+  .case-result{padding:18px;}
+  .case-caption{margin-top:16px;}
+}
 @media (max-width:760px){
-  .case-demo{flex-direction:column;}
-  .case-demo-arrow{transform:rotate(90deg);}
+  .case-demo{flex-direction:column;gap:8px;}
+  .case-demo-arrow{transform:rotate(90deg);font-size:16px;line-height:1;}
   .case-result{flex:none;width:100%;}
 }
+/* Mobile: compact the case card vertically (spacing/padding), keeping type sizes close to desktop. */
 @media (max-width:600px){
-  .cases{padding:64px 0;}
+  .cases{padding:56px 0;}
   .stat-band{grid-template-columns:1fr 1fr;gap:24px 16px;}
-  .case-stage{padding:24px 20px;border-radius:20px;}
+  .case-tabs{margin-bottom:16px;}
+  .case-tab{padding:9px 13px;font-size:13px;}
+  .case-tab.is-active::before{margin-right:6px;}
+  .case-stage{padding:20px 16px;border-radius:20px;}
+  .case-panel-title{font-size:18px;margin-bottom:14px;}
+  .case-chat{padding:14px 12px;gap:6px;border-radius:14px;}
+  .case-bubble{max-width:88%;padding:8px 11px;font-size:13px;line-height:1.38;}
+  .case-result{padding:14px 16px;border-radius:14px;}
+  .case-result-title{margin-bottom:8px;}
+  .case-result-list{gap:6px;margin-bottom:10px;}
+  .case-result-list li{padding-top:6px;}
+  .case-caption{margin-top:14px;font-size:12.5px;}
+}
+@media (max-width:350px){
+  .case-tab{padding:8px 8px;font-size:12px;}
+  .case-tab.is-active::before{margin-right:5px;}
 }
 @media (prefers-reduced-motion:reduce){.case-stage{transition:none;}}
 
@@ -586,9 +678,116 @@ h1,h2,h3{line-height:1.15;}
 @media (max-width:600px){
   .hero{padding:24px 0 32px;}
   .cards-grid{grid-template-columns:1fr;}
-  .footer-grid{grid-template-columns:1fr;gap:32px;}
+  /* Footer: brand on top, the two link columns side by side; headings as small muted labels so the order of
+     emphasis reads brand → links → labels. */
+  .site-footer{padding:56px 0 28px;}
+  .footer-grid{grid-template-columns:minmax(0,1.13fr) minmax(0,1fr);gap:32px 16px;margin-bottom:36px;}
+  .footer-grid > :first-child{grid-column:1 / -1;}
+  .footer-brand{margin-bottom:10px;}
+  .footer-tagline{font-size:13.5px;max-width:300px;}
+  .footer-col h4{font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--text-secondary-dark);margin-bottom:10px;}
+  .footer-col a{font-size:14px;font-weight:500;padding:5px 0;}
+  .footer-bottom{flex-direction:column;gap:4px;padding-top:20px;font-size:12px;}
   .card-number{font-size:5rem;}
   .hero-sub{margin:16px 0 24px;}
+}
+@media (max-width:350px){
+  .footer-col a{font-size:13px;}
+}
+
+/* ==========================================================================
+   MOBILE COMPACT PASS (≤600px only) — reduces scroll: section padding,
+   section headline size, card padding/spacing, and two secondary texts.
+   Hero and the final CTA's type/buttons keep their size. Desktop/tablet
+   untouched. Kept last so it wins over the earlier mobile rules.
+   ========================================================================== */
+@media (max-width:600px){
+  /* Section rhythm + shared type */
+  .solves,.usecases,.teams,.info,.integrations,.cases,.pricing,.faq{padding:52px 0;}
+  .cta-final{padding:72px 0;}
+  main > section:not(.hero) .hero-kicker{margin-bottom:12px;font-size:12px;}
+  .solves-headline,.usecases-headline,.teams-headline,.info-headline,.integrations-headline,.cases-headline,.pricing-headline,.faq-headline{font-size:30px;line-height:1.12;}
+  .info-lead,.integrations-lead,.cases-lead,.pricing-lead,.teams-lead{font-size:15px;line-height:1.55;}
+  .solves-head,.integrations-head,.pricing-head{margin-bottom:28px;}
+  .faq-head{margin-bottom:20px;}
+
+  /* Cómo funciona */
+  .cards-grid{gap:24px;}
+  .cards-grid > div{padding-top:18px;}
+  .card-number{font-size:3.5rem;}
+  .card-q{font-size:19px;margin-bottom:6px;}
+  .card-a{font-size:15px;line-height:1.55;}
+
+  /* Casos de uso: icon beside the title, tighter card; intro hidden */
+  .usecases-layout{gap:24px;}
+  .usecases-intro{display:none;}
+  .usecases-headline br{display:none;}
+  .usecase-grid{gap:14px;}
+  .usecase-card{display:grid;grid-template-columns:auto 1fr;column-gap:12px;align-items:center;padding:18px;border-radius:16px;}
+  .usecase-num{display:none;}
+  .usecase-icon{width:36px;height:36px;border-radius:10px;margin-bottom:0;}
+  .usecase-icon svg{width:18px;height:18px;}
+  .usecase-card h3{font-size:17px;margin:0;}
+  .usecase-card > p{grid-column:1 / -1;font-size:14px;line-height:1.55;margin-top:10px;}
+  .usecase-example{grid-column:1 / -1;margin-top:12px;padding-top:12px;}
+  .usecase-msg{margin-bottom:8px;padding:6px 10px;}
+
+  /* IA + Equipos */
+  .teams-headline{margin-bottom:14px;}
+  .teams-lead{margin-bottom:28px;}
+  .teams-layout{gap:32px;}
+  .teams-inbox-header{padding:14px 16px;}
+  .teams-inbox-row{padding:13px 16px;gap:12px;}
+  .teams-inbox-status-wrap{margin-left:50px;margin-top:6px;}
+  .teams-inbox-footer{padding:12px 16px;}
+  .teams-benefits-sep{margin-top:32px;}
+  .teams-benefits{gap:16px;margin-top:20px;}
+  .teams-benefit-top{gap:12px;margin-bottom:2px;}
+  .teams-benefit-icon{width:36px;height:36px;border-radius:10px;}
+  .teams-benefit-icon svg{width:18px;height:18px;}
+  .teams-benefit p{padding-left:48px;}
+
+  /* Información */
+  .info-headline{margin-bottom:12px;}
+  .info-lead{margin-bottom:24px;}
+  .info-grid{gap:14px;}
+  .info-panel{padding:18px;border-radius:16px;}
+  .info-panel-title{margin-bottom:12px;}
+  .contact-card-header{margin-bottom:14px;}
+  .showcase-disclaimer{margin-top:14px;font-size:12px;}
+
+  /* Integraciones */
+  .integ-flow{margin-bottom:32px;}
+  .integ-types{gap:12px;margin-bottom:28px;}
+  .integ-type{padding-top:12px;}
+  .marquee-row{margin-bottom:10px;}
+  .marquee-track{padding:4px 0;}
+
+  /* Casos reales */
+  .cases-lead{margin-bottom:24px;}
+  .stat-band{gap:14px 12px;padding:18px 0;margin-bottom:24px;}
+  .stat-value{font-size:1.6rem;margin-bottom:4px;}
+  .stat-label{font-size:11.5px;}
+
+  /* Planes (prices keep their size) */
+  .pricing-grid{gap:18px;margin-bottom:16px;}
+  .plan-card{padding:24px 20px;border-radius:18px;}
+  .plan-name{margin-bottom:8px;}
+  .plan-price{margin-bottom:10px;}
+  .plan-desc{min-height:0;margin-bottom:14px;font-size:14px;}
+  .plan-benefits{margin-bottom:14px;}
+  .plan-benefits li{padding:4px 0;font-size:14px;}
+  .plan-implementation{padding-top:12px;margin-bottom:14px;}
+  .plan-cta{padding:12px 20px;}
+  .enterprise-strip{gap:12px;padding:20px;margin-bottom:20px;border-radius:18px;}
+  .enterprise-name{font-size:17px;}
+  .pricing-footnote{font-size:12.5px;}
+  .pricing-footnote--small{display:none;}
+
+  /* FAQ */
+  .faq-q{padding:17px 0;font-size:15px;gap:14px;}
+  .faq-icon{font-size:20px;}
+  .faq-a p{font-size:15px;line-height:1.6;padding-bottom:18px;}
 }
 
 
