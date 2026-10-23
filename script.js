@@ -375,7 +375,7 @@ function initAnchors(){
    "LP-7K2M9X". Generated once, reused from sessionStorage on every reload
    within the same session, regenerated only when sessionStorage is empty
    (a genuinely new session). Alphabet excludes 0/O and 1/I to avoid visual
-   confusion when someone reads the code out of a WhatsApp message. Kept in
+   confusion when someone reads the code back from a report. Kept in
    its own key (not merged into crafty_attribution) since it's an identity,
    not an acquisition fact. */
 var LEAD_ID_ALPHABET="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -403,33 +403,67 @@ function initLeadId(){
   getOrCreateLeadId();
 }
 
-/* Appends " Ref: <lead_id>" to the prefilled text of every wa.me link, on
-   top of the message already in the HTML (e.g. "Hola, quiero conocer
-   Crafty. Ref: <lead_id>"). Crafty can extract it with
-   /Ref:\s*(LP-[A-HJ-NP-Z2-9]{6})/. Runs once per page load; guards against
-   double-appending. Only touches the text param. */
-function initLeadIdInLinks(){
-  var id=getOrCreateLeadId();
-  var marker="Ref: ";
-  var links=document.querySelectorAll('a[href^="https://wa.me/"]');
-  links.forEach(function(a){
-    try{
-      var href=a.getAttribute("href");
-      var qIndex=href.indexOf("?");
-      var base=qIndex===-1?href:href.slice(0,qIndex);
-      var query=qIndex===-1?"":href.slice(qIndex+1);
-      var text=new URLSearchParams(query).get("text")||"";
-      if(text.indexOf(marker+"LP-")!==-1) return;
-      var newText=(text?text+" ":"")+marker+id;
-      a.setAttribute("href",base+"?text="+encodeURIComponent(newText));
-    }catch(e){}
+/* WhatsApp ref: one short line appended to the prefilled text of every
+   wa.me link, read by the Crafty agent to fill the contact's custom fields,
+   e.g.
+     Ref: pid=professional | uc=rsa-stock | ut=agente ia whatsapp
+   Short aliases keep the visitor's message clean; the agent prompt maps each
+   alias to its custom field, so tracking a new field means one more entry in
+   REF_FIELDS plus one line in that mapping. Empty values are left out, and
+   so is the whole line when there's nothing to report. Only touches the
+   text param. */
+var WHATSAPP_LINK_SELECTOR='a[href^="https://wa.me/"]';
+var REF_VALUE_MAX_LENGTH=80; // Google Ads' own keyword limit, so a real utm_term is never cut
+var REF_FIELDS=[
+  // plan_id: the clicked plan CTA wins; otherwise the last plan clicked in this visit
+  {alias:"pid", read:function(link){ return link.getAttribute("data-plan")||getStoredPlanInterest(); }},
+  // utm_content
+  {alias:"uc", read:function(){ return getStoredAttribution().utm_content; }},
+  // utm_term
+  {alias:"ut", read:function(){ return getStoredAttribution().utm_term; }}
+];
+// "|" and "=" are the ref's own separators, and a line break would split it
+function sanitizeRefValue(value){
+  return String(value).replace(/[|=\s]+/g," ").trim().slice(0,REF_VALUE_MAX_LENGTH).trim();
+}
+function buildWhatsappRef(link){
+  var pairs=[];
+  REF_FIELDS.forEach(function(field){
+    var value=sanitizeRefValue(field.read(link)||"");
+    if(value) pairs.push(field.alias+"="+value);
   });
+  return pairs.length?"Ref: "+pairs.join(" | "):"";
+}
+/* The HTML's original text is kept in data-wa-text, so the href can be
+   rebuilt any number of times without appending the ref twice. */
+function renderWhatsappLink(link){
+  var href=link.getAttribute("href");
+  var qIndex=href.indexOf("?");
+  var base=qIndex===-1?href:href.slice(0,qIndex);
+  if(!link.hasAttribute("data-wa-text")){
+    link.setAttribute("data-wa-text",new URLSearchParams(qIndex===-1?"":href.slice(qIndex+1)).get("text")||"");
+  }
+  var message=[link.getAttribute("data-wa-text"),buildWhatsappRef(link)].filter(Boolean).join("\n\n");
+  link.setAttribute("href",base+(message?"?text="+encodeURIComponent(message):""));
+}
+/* Rendered on load, so copied links and middle-clicks carry the ref too, and
+   again on click (capture phase, before the browser follows the href) with
+   the plan interest as it stands at that moment. */
+function initWhatsappRefs(){
+  document.querySelectorAll(WHATSAPP_LINK_SELECTOR).forEach(function(a){
+    safe(function(){ renderWhatsappLink(a); },"renderWhatsappLink");
+  });
+  document.addEventListener("click",function(e){
+    var a=e.target.closest(WHATSAPP_LINK_SELECTOR);
+    if(a) safe(function(){ renderWhatsappLink(a); },"renderWhatsappLink");
+  },true);
 }
 
 /* Attribution capture: store UTM/gclid/fbclid params from the URL in
    sessionStorage, alongside the landing page path and the initial capture
-   timestamp. Read by trackEvent (dataLayer) and sendLeadToSheet; never
-   added to the WhatsApp message. Scoped to the current tab session.
+   timestamp. Read by trackEvent (dataLayer) and the WhatsApp ref, which
+   carries only the keys listed in REF_FIELDS. Scoped to the current tab
+   session.
    The stored record is kept as-is when a load has no tracked params (empty
    values are ignored) or the same params as before (e.g. a reload), so the
    initial timestamp survives. Only a load with a different set of params —
@@ -458,8 +492,8 @@ function initAttributionCapture(){
 }
 
 /* Shared readers for the two sessionStorage records, used by both
-   trackEvent (dataLayer) and sendLeadToSheet (Apps Script POST) so the
-   two never drift out of sync with each other. */
+   trackEvent (dataLayer) and the WhatsApp ref so the two never drift out of
+   sync with each other. */
 function getStoredAttribution(){
   var attribution={};
   try{
@@ -486,58 +520,11 @@ function trackEvent(name,extra){
   try{ console.debug("[track]",payload); }catch(e){}
 }
 
-/* Step 2 of the tracking system: POST the lead to the Google Apps Script
-   endpoint backing "Crafty — Leads & Attribution (TEST simple)", upserted
-   by lead_id. Left unconfigured (empty string) until the Web App is
-   deployed and its URL is provided — see docs/apps-script-leads-endpoint.gs
-   and the deployment steps sent alongside it. Until then this is a
-   guaranteed no-op: it returns before touching the network.
-
-   Deliberately NOT awaited by the caller and never calls
-   preventDefault() on the WhatsApp link — the browser opens wa.me in its
-   own new tab (target="_blank") independently of this call, so a slow or
-   failed POST can never delay or block that. Plain (CORS) mode, not
-   no-cors: confirmed by real testing (2026-09-07) that Apps Script Web
-   Apps here send access-control-allow-origin:*, so a normal fetch is
-   readable — useful for future debugging — with no behavior difference
-   for this fire-and-forget call, which still never reads the response.
-   text/plain content-type avoids a CORS preflight OPTIONS request, which
-   Apps Script Web Apps do not handle. */
-var CRAFTY_SHEET_ENDPOINT="https://script.google.com/macros/s/AKfycbzxDUU4WcEhQwXw7IhTEwyt-7Sw4Xa4XtxLvWaMvIULuyuMyy19jz8AMwPwFkxRKp0P/exec";
-function sendLeadToSheet(extra){
-  if(!CRAFTY_SHEET_ENDPOINT || !window.fetch) return;
-  var attribution=getStoredAttribution();
-  var planInterest=getStoredPlanInterest();
-  var payload={
-    lead_id: getOrCreateLeadId(),
-    visit_timestamp: attribution.timestamp||"",
-    source: attribution.utm_source||"",
-    medium: attribution.utm_medium||"",
-    campaign: attribution.utm_campaign||"",
-    content: attribution.utm_content||"",
-    term: attribution.utm_term||"",
-    gclid: attribution.gclid||"",
-    fbclid: attribution.fbclid||"",
-    plan_interest: (extra&&extra.plan_interest)||planInterest||"",
-    cta: (extra&&extra.cta)||"",
-    landing_page: attribution.landing_page||""
-  };
-  try{
-    fetch(CRAFTY_SHEET_ENDPOINT,{
-      method:"POST",
-      headers:{"Content-Type":"text/plain;charset=utf-8"},
-      body: JSON.stringify(payload),
-      keepalive:true
-    }).catch(function(){}); // network/endpoint failure: swallow silently, never surface to the visitor
-  }catch(e){}
-}
-
 /* Wires cta_crafty_click / pricing_plan_click / whatsapp_click to the
    data-track attributes already present on every CTA. The plan travels as
    plan_interest only (GTM maps it to GA4's selected_plan); it's persisted in
    sessionStorage and keeps enriching later events in the same visit (e.g. a
-   later nav "Hablá con Crafty" click). A Sheet row (create-or-update by
-   lead_id) is registered only on an actual WhatsApp click. */
+   later nav "Hablá con Crafty" click). */
 function initEventTracking(){
   document.addEventListener("click",function(e){
     var el=e.target.closest("[data-track]");
@@ -554,7 +541,6 @@ function initEventTracking(){
     }
     if(isWhatsapp){
       trackEvent("whatsapp_click",{cta:key,channel:channel});
-      sendLeadToSheet({cta:key, plan_interest:plan||null});
     }
     if(key==="whatsapp-nav" || key==="whatsapp-hero" || key==="whatsapp-final"){
       trackEvent("cta_crafty_click",{cta:key,channel:channel});
@@ -599,8 +585,8 @@ document.addEventListener("DOMContentLoaded",function(){
   safe(initFAQ,"initFAQ");
   safe(initAnchors,"initAnchors");
   safe(initLeadId,"initLeadId");
-  safe(initLeadIdInLinks,"initLeadIdInLinks");
   safe(initAttributionCapture,"initAttributionCapture");
+  safe(initWhatsappRefs,"initWhatsappRefs");
   safe(initEventTracking,"initEventTracking");
   safe(initWebchatTracking,"initWebchatTracking");
   safe(initPricingSchema,"initPricingSchema");
